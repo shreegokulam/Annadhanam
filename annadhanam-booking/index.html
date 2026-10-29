@@ -334,10 +334,16 @@ async function viewTicket(app, code) {
     <p class="sub" style="text-align:center"><a href="#/">← Make another booking</a> · <a href="#/find">Find my booking</a></p>${footer()}</div>`;
   const cv = $('#cv'); await drawTicket(cv, t, info);
   $('#save').onclick = () => cv.toBlob(b => download(b, `lunch-ticket-${t.code}.png`));
-  $('#wa').onclick = () => {
-    const txt = `${CONFIG.ORG}\n${info.title} · ${CONFIG.VENUE}\n${t.name} · ${t.party_size} guest(s)\n${info.date ? fmtDate(info.date) + ' · ' : ''}${fmtSlot(t.slot)}\nBooking code: ${t.code}\nYour entry QR: ${link}`;
-    window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
-  };
+  $('#wa').onclick = () => cv.toBlob(async b => {
+    const name = `lunch-ticket-${t.code}.png`, file = new File([b], name, {type: 'image/png'});
+    if (navigator.canShare && navigator.canShare({files: [file]})) {
+      try { await navigator.share({files: [file]}); } catch (_) {}
+      return;
+    }
+    download(b, name);
+    $('#msg').innerHTML = '<div class="note">Your device can’t share images directly. The ticket image was saved — attach it in WhatsApp from your photos/downloads.</div>';
+    window.open('https://wa.me/', '_blank');
+  });
   if ($('#cal')) $('#cal').onclick = () => download(new Blob([makeICS(t, info)], {type:'text/calendar'}), `lunch-${t.code}.ics`);
   $('#cp').onclick = async () => { try { await navigator.clipboard.writeText(link); $('#msg').innerHTML = '<div class="okbox">Link copied.</div>'; } catch (_) { $('#msg').innerHTML = `<div class="note">${esc(link)}</div>`; } };
 }
