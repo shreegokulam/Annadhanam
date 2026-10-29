@@ -423,6 +423,14 @@ function runScanner(app, pin) {
       o.frequency.value = ok ? 880 : 220; g.gain.value = 0.15; o.start(); o.stop(actx.currentTime + (ok ? 0.12 : 0.35)); } catch (_) {}
   }
   const show = (kind, html, after) => { const r = $('#res'); if (!r) return; r.className = 'res ' + kind; r.innerHTML = html; if (after) after(r); };
+  // back to the idle card with a live camera, ready for the next guest
+  const ready = () => {
+    show('idle', '<div class="big">Ready to scan</div><div>Point the camera at the guest’s QR</div>');
+    last = {txt: last.txt, t: Date.now()};
+    const live = stream && stream.getTracks().some(t => t.readyState === 'live');
+    if (!live) cam(); else { vid.style.display = ''; if (vid.paused) vid.play().catch(() => {}); }
+    vid.scrollIntoView({behavior: 'smooth', block: 'center'});
+  };
   const upsert = b => { if (!b) return; const i = cache.list.findIndex(x => x.code === b.code); if (i >= 0) cache.list[i] = {...cache.list[i], ...b}; else cache.list.unshift(b); rebuild(); saveCache(cache.list); };
 
   function render(r, offline) {
@@ -434,7 +442,7 @@ function runScanner(app, pin) {
         <div class="big">${esc(b.name)}</div><div>${now > 1 ? 'guests' : 'guest'} · ${fmtSlot(b.slot)}${r.previous ? ' · ' + r.previous + ' already inside' : ''}</div>
         ${b.party_size > 1 ? `<div class="adj">Fewer arrived? People inside: ${[...Array(b.party_size + 1).keys()].map(i => `<button data-n="${i}">${i}</button>`).join('')}</div>` : ''}`,
         el => el.querySelectorAll('[data-n]').forEach(x => x.onclick = async () => {
-          try { const nb = await rpc('staff_set_checked_in', {p_pin: pin, p_code: b.code, p_n: +x.dataset.n}); upsert(nb); flash(`Set to ${nb.checked_in} of ${nb.party_size} inside`); }
+          try { const nb = await rpc('staff_set_checked_in', {p_pin: pin, p_code: b.code, p_n: +x.dataset.n}); upsert(nb); flash(`Set to ${nb.checked_in} of ${nb.party_size} inside`); ready(); }
           catch (e) { flash(e.offline ? 'Needs a connection to adjust' : errMsg(e)); } }));
     } else if (r.status === 'already') {
       beep(false);
@@ -499,7 +507,7 @@ function runScanner(app, pin) {
     if (stream) stream.getTracks().forEach(t => t.stop());
     try {
       stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: facing}, width: {ideal: 1280}}, audio: false});
-      vid.srcObject = stream; await vid.play();
+      vid.srcObject = stream; vid.style.display = ''; await vid.play();
     } catch (e) { vid.style.display = 'none'; flash('Camera unavailable — use Search to admit guests.'); }
   }
   async function tick() {
