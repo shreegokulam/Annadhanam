@@ -212,6 +212,7 @@ function route() {
 addEventListener('hashchange', route);
 
 /* ---------------- Guest: booking page ---------------- */
+const chime = new Audio('sounds/sharanam-vili.mp3'); chime.preload = 'auto';
 async function viewBook(app) {
   app.innerHTML = '<div class="wrap"><p class="sub">Loading…</p></div>';
   let info;
@@ -254,8 +255,12 @@ async function viewBook(app) {
     if (name.length < 2) return msg.innerHTML = '<div class="err">Please enter your name.</div>';
     if (phone.replace(/\D/g,'').length < 7) return msg.innerHTML = '<div class="err">Please enter a valid phone number.</div>';
     const go = $('#go'); go.disabled = true; go.textContent = 'Booking…';
+    // unlock audio during the tap so it can play once the booking is confirmed (iOS/Safari)
+    let booked = false;
+    chime.muted = true; chime.play().then(() => { if (!booked) { chime.pause(); chime.currentTime = 0; } chime.muted = false; }).catch(() => { chime.muted = false; });
     try {
       const t = await rpc('book', {p_name: name, p_phone: phone, p_slot: slot, p_size: size});
+      booked = true; chime.muted = false; chime.currentTime = 0; chime.play().catch(() => {});
       const list = JSON.parse(localStorage.getItem('lq_tickets') || '[]'); list.unshift(t.code);
       localStorage.setItem('lq_tickets', JSON.stringify([...new Set(list)]));
       location.hash = '#/t/' + t.code;
