@@ -89,6 +89,8 @@ declare
 begin
   p_name := btrim(coalesce(p_name,''));
   if length(p_name) < 2 then raise exception 'name_required'; end if;
+  -- guest bookings: UAE mobile only, 10 digits starting with 05, numbers only
+  if not p_walk and coalesce(p_phone,'') !~ '^05[0-9]{8}$' then raise exception 'phone_invalid'; end if;
   pk := right(regexp_replace(coalesce(p_phone,''),'\D','','g'),9);
   if length(pk) < 7 then
     if p_walk then pk := 'walkin'; else raise exception 'phone_invalid'; end if;

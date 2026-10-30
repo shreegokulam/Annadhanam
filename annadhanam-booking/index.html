@@ -121,10 +121,11 @@ const pad = n => String(n).padStart(2,'0');
 const fmtSlot = s => { const [h,m] = s.split(':').map(Number); return `${h>12?h-12:h}:${pad(m)} ${h>=12?'PM':'AM'}`; };
 const fmtDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : '';
 const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) : '';
+const PHONE_RE = /^05\d{8}$/; // UAE mobile: 10 digits, starts with 05, numbers only
 const ERR = {
   slot_full:'Sorry, that time just filled up. Please pick another slot.',
   phone_limit:'This phone number has reached its booking limit.',
-  name_required:'Please enter your name.', phone_invalid:'Please enter a valid phone number.',
+  name_required:'Please enter your name.', phone_invalid:'Please enter a valid phone number: 10 digits starting with 05 (e.g. 0501234567), numbers only.',
   closed:'Bookings are closed.', bad_pin:'Wrong PIN.', offline:'No connection. Please check your internet and try again.',
   slot_invalid:'Invalid time slot.', size_invalid:'Number of people must be 1 to 4.', not_found:'Booking not found.', pin_short:'PIN must be at least 4 characters.'
 };
@@ -170,6 +171,7 @@ const demo = (() => {
   const booked = (d,s) => d.b.filter(x=>x.slot===s && !x.cancelled).reduce((a,x)=>a+x.party_size,0);
   const make = (d,n,ph,slot,size,walk) => {
     n = (n||'').trim(); if (n.length < 2) E('name_required');
+    if (!walk && !PHONE_RE.test(String(ph||''))) E('phone_invalid');
     let k = pk(ph); if (k.length < 7) { if (walk) k = 'walkin'; else E('phone_invalid'); }
     if (!SLOTS.includes(slot)) E('slot_invalid');
     if (!(size >= 1 && size <= 4)) E('size_invalid');
@@ -228,7 +230,8 @@ async function viewBook(app) {
       <label style="margin-top:0">1. Pick a time</label><div class="slots" id="slots"></div>
       <label>2. How many people? (max 4)</label><div class="seg" id="seg"></div>
       <label for="nm">3. Your name</label><input id="nm" autocomplete="name" maxlength="60">
-      <label for="ph">Phone number</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" maxlength="20">
+      <label for="ph">Phone number <span class="mut" style="font-weight:400">(format: 05XXXXXXXX)</span></label><input id="ph" type="tel" inputmode="numeric" autocomplete="tel" maxlength="10" pattern="05[0-9]{8}" placeholder="05XXXXXXXX">
+      <div class="mut" style="font-size:13px;margin-top:4px">10 digits starting with 05, numbers only. No spaces, + or dashes.</div>
       <div id="msg"></div>
       <button class="btn" id="go" style="margin-top:14px" ${info.open ? '' : 'disabled'}>Book my slot</button>
     </div>
@@ -248,12 +251,13 @@ async function viewBook(app) {
     document.querySelectorAll('#seg button').forEach(b => b.onclick = () => { size = +b.dataset.n; drawSlots(); });
   }
   drawSlots();
+  $('#ph').oninput = e => { const v = e.target.value.replace(/\D/g,'').slice(0,10); if (v !== e.target.value) e.target.value = v; };
   $('#go').onclick = async () => {
     const msg = $('#msg'), name = $('#nm').value.trim(), phone = $('#ph').value.trim();
     msg.innerHTML = '';
     if (!slot) return msg.innerHTML = '<div class="err">Please pick a time slot.</div>';
     if (name.length < 2) return msg.innerHTML = '<div class="err">Please enter your name.</div>';
-    if (phone.replace(/\D/g,'').length < 7) return msg.innerHTML = '<div class="err">Please enter a valid phone number.</div>';
+    if (!PHONE_RE.test(phone)) return msg.innerHTML = `<div class="err">${ERR.phone_invalid}</div>`;
     const go = $('#go'); go.disabled = true; go.textContent = 'Booking…';
     // unlock audio during the tap so it can play once the booking is confirmed (iOS/Safari)
     let booked = false;
