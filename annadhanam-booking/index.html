@@ -88,8 +88,13 @@ video{width:100%;border-radius:14px;background:#000;max-height:34vh;object-fit:c
 .res .lbl{font-weight:800;letter-spacing:.06em;font-size:15px;opacity:.95}
 .res .big{font-size:28px;font-weight:800;line-height:1.15;margin:6px 0}
 .res .n{font-size:68px;font-weight:900;line-height:1}
-.res .adj{margin-top:10px;font-size:14px}
-.res .adj button,.res .go{margin:3px;min-width:38px;padding:7px 10px;border-radius:8px;border:0;font-weight:800;background:rgba(255,255,255,.92);color:#1b1f1d}
+.res .adj{margin-top:14px;width:100%;max-width:420px}
+.res .adj .al{font-size:18px;font-weight:800;margin-bottom:10px}
+.res .adj .nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(60px,1fr));gap:10px}
+.res .adj button{height:68px;font-size:30px;font-weight:900;border-radius:14px;border:3px solid transparent;background:rgba(255,255,255,.92);color:#1b1f1d;cursor:pointer;transition:transform .1s,background .15s}
+.res .adj button.sel{background:#ffd54a;border-color:#fff;color:#1b1f1d;transform:scale(1.08);box-shadow:0 0 0 4px rgba(0,0,0,.25)}
+.res .adj button:disabled:not(.sel){opacity:.55}
+.res .go{margin:3px;min-width:38px;padding:7px 10px;border-radius:8px;border:0;font-weight:800;background:rgba(255,255,255,.92);color:#1b1f1d}
 .item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
 .demo{background:#2f2308;color:#ffd88a;padding:8px 12px;border-radius:10px;font-size:13px;margin-bottom:10px}
 </style>
@@ -416,7 +421,7 @@ const getPending = () => { try { return JSON.parse(localStorage.getItem('lq_pend
 const setPending = p => localStorage.setItem('lq_pending', JSON.stringify(p));
 
 function runScanner(app, pin) {
-  let cache = loadCache(), idx = new Map(), online = true, syncing = false, stream = null, facing = 'environment', busy = false, last = {txt:'', t:0};
+  let cache = loadCache(), idx = new Map(), online = true, syncing = false, stream = null, facing = 'environment', busy = false, hold = false, last = {txt:'', t:0};
   const rebuild = () => { idx = new Map(cache.list.map(b => [b.code, b])); };
   rebuild();
   let actx = null; try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {}
@@ -436,9 +441,10 @@ function runScanner(app, pin) {
       if (!actx) return; const o = actx.createOscillator(), g = actx.createGain(); o.connect(g); g.connect(actx.destination);
       o.frequency.value = ok ? 880 : 220; g.gain.value = 0.15; o.start(); o.stop(actx.currentTime + (ok ? 0.12 : 0.35)); } catch (_) {}
   }
-  const show = (kind, html, after) => { const r = $('#res'); if (!r) return; r.className = 'res ' + kind; r.innerHTML = html; if (after) after(r); };
+  const show = (kind, html, after) => { const r = $('#res'); if (!r) return; hold = false; r.className = 'res ' + kind; r.innerHTML = html; if (after) after(r); };
   // back to the idle card with a live camera, ready for the next guest
   const ready = () => {
+    hold = false;
     show('idle', '<div class="big">Ready to scan</div><div>Point the camera at the guest’s QR</div>');
     last = {txt: last.txt, t: Date.now()};
     const live = stream && stream.getTracks().some(t => t.readyState === 'live');
@@ -454,10 +460,23 @@ function runScanner(app, pin) {
       const now = b.party_size - (r.previous || 0);
       show('ok', `<div class="lbl">ADMIT${offline ? ' (OFFLINE)' : ''}</div><div class="n">${now}</div>
         <div class="big">${esc(b.name)}</div><div>${now > 1 ? 'guests' : 'guest'} · ${fmtSlot(b.slot)}${r.previous ? ' · ' + r.previous + ' already inside' : ''}</div>
-        ${b.party_size > 1 ? `<div class="adj">Fewer arrived? People inside: ${[...Array(b.party_size + 1).keys()].map(i => `<button data-n="${i}">${i}</button>`).join('')}</div>` : ''}`,
-        el => el.querySelectorAll('[data-n]').forEach(x => x.onclick = async () => {
-          try { const nb = await rpc('staff_set_checked_in', {p_pin: pin, p_code: b.code, p_n: +x.dataset.n}); upsert(nb); flash(`Set to ${nb.checked_in} of ${nb.party_size} inside`); ready(); }
-          catch (e) { flash(e.offline ? 'Needs a connection to adjust' : errMsg(e)); } }));
+        ${b.party_size > 1 ? `<div class="adj"><div class="al">No of People :</div><div class="nums">${[...Array(b.party_size + 1).keys()].map(i => `<button data-n="${i}">${i}</button>`).join('')}</div></div>` : ''}`,
+        el => {
+          const btns = [...el.querySelectorAll('[data-n]')];
+          // keep this card on screen (no new scans) until a number is chosen
+          if (btns.length) hold = true;
+          btns.forEach(x => x.onclick = async () => {
+            btns.forEach(y => { y.classList.toggle('sel', y === x); y.disabled = true; });
+            try {
+              const nb = await rpc('staff_set_checked_in', {p_pin: pin, p_code: b.code, p_n: +x.dataset.n}); upsert(nb);
+              flash(`Set to ${nb.checked_in} of ${nb.party_size} inside`);
+              setTimeout(ready, 700);
+            } catch (e) {
+              flash(e.offline ? 'Needs a connection to adjust' : errMsg(e));
+              btns.forEach(y => { y.classList.remove('sel'); y.disabled = false; });
+            }
+          });
+        });
     } else if (r.status === 'already') {
       beep(false);
       show('bad', `<div class="lbl">ALREADY ENTERED</div><div class="big">${esc(b.name)}</div><div>${b.party_size} guest${b.party_size > 1 ? 's' : ''} · in at ${esc(fmtTime(b.checked_in_at))}</div>`);
@@ -525,7 +544,7 @@ function runScanner(app, pin) {
     } catch (e) { vid.style.display = 'none'; flash('Camera unavailable — use Search to admit guests.'); }
   }
   async function tick() {
-    if (busy || !vid.videoWidth) return; busy = true;
+    if (busy || hold || !vid.videoWidth) return; busy = true;
     try {
       let txt = null;
       if (bd) { const r = await bd.detect(vid); if (r.length) txt = r[0].rawValue; }
